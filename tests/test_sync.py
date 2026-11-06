@@ -200,10 +200,39 @@ def test_events_with_old_format_are_rewritten_without_attendees():
     del event["extendedProperties"]["private"]["m2c_fmt"]
     assert sync(box, cal, MemoryStore())["actualizado"] == 1
     [event] = cal.active()
-    assert "attendees" not in event and event["extendedProperties"]["private"]["m2c_fmt"] == "2"
+    assert "attendees" not in event and event["extendedProperties"]["private"]["m2c_fmt"].startswith("2;")
 
 
 def test_no_participants_are_sent_to_google():
     cal = FakeCalendar()
     sync(FakeMailbox(email_with(OUTLOOK_RECURRING), email_with(GOOGLE_INVITE)), cal, MemoryStore())
     assert all("attendees" not in e and "organizer" not in e for e in cal.events.values())
+
+
+def test_reminders_are_popup_only_30_and_1_minutes():
+    cal = FakeCalendar()
+    sync(FakeMailbox(email_with(OUTLOOK_RECURRING)), cal, MemoryStore())
+    [event] = cal.active()
+    assert event["reminders"] == {"useDefault": False, "overrides": [
+        {"method": "popup", "minutes": 30}, {"method": "popup", "minutes": 1}]}
+
+
+def test_changing_preferences_rewrites_existing_events():
+    from dataclasses import replace
+    cal = FakeCalendar()
+    box = FakeMailbox(email_with(OUTLOOK_RECURRING))
+    sync(box, cal, MemoryStore())
+    stats = run(replace(CFG, reminder_minutes=(10,)), mailbox=box, calendar=cal, store=MemoryStore())
+    assert stats["actualizado"] == 1
+    [event] = cal.active()
+    assert event["reminders"]["overrides"] == [{"method": "popup", "minutes": 10}]
+
+
+def test_reminder_config_parsing():
+    from mail2cal.config import ConfigError
+    base = {"IMAP_USER": "a", "IMAP_PASSWORD": "b"}
+    assert Config.from_env(base, require_google=False).reminder_minutes == (30, 1)
+    assert Config.from_env({**base, "REMINDER_MINUTES": "1, 30"}, require_google=False).reminder_minutes == (30, 1)
+    assert Config.from_env({**base, "REMINDER_MINUTES": ""}, require_google=False).reminder_minutes == ()
+    with pytest.raises(ConfigError):
+        Config.from_env({**base, "REMINDER_MINUTES": "abc"}, require_google=False)

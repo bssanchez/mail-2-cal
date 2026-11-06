@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 # Campos que se copian a una instancia concreta de una serie (RECURRENCE-ID).
 INSTANCE_FIELDS = ("summary", "description", "location", "start", "end", "status", "transparency",
-                   "extendedProperties", "colorId")
+                   "extendedProperties", "colorId", "reminders")
 
 
 def run(cfg: Config, *, dry_run: bool = False, mailbox=None, calendar=None, store=None) -> dict:
@@ -41,10 +41,8 @@ def run(cfg: Config, *, dry_run: bool = False, mailbox=None, calendar=None, stor
                     except Exception as exc:
                         log.warning("%s UID %s: calendario ilegible (%s)", folder, uid, exc)
                         continue
-                    if cfg.event_color_id:
-                        for inv in parsed:
-                            if inv.action == "upsert":
-                                inv.body["colorId"] = cfg.event_color_id
+                    for inv in parsed:
+                        customize(inv, cfg)
                     invites.extend(parsed)
 
     pending = latest_per_event(invites)
@@ -76,6 +74,22 @@ def run(cfg: Config, *, dry_run: bool = False, mailbox=None, calendar=None, stor
     store.save(state)
     log.info("Resumen: %s", dict(stats))
     return dict(stats)
+
+
+def customize(inv: Invite, cfg: Config) -> None:
+    """Aplica tus preferencias (color, avisos) y las anota en la huella de formato del evento."""
+    if inv.action != "upsert":
+        return
+    if cfg.event_color_id:
+        inv.body["colorId"] = cfg.event_color_id
+    # Solo avisos en la app (popup); nunca por correo.
+    inv.body["reminders"] = {
+        "useDefault": False,
+        "overrides": [{"method": "popup", "minutes": m} for m in cfg.reminder_minutes],
+    }
+    reminders = "-".join(map(str, cfg.reminder_minutes))
+    inv.body["extendedProperties"]["private"]["m2c_fmt"] = \
+        f"{FORMAT_VERSION};c={cfg.event_color_id};r={reminders}"
 
 
 def latest_per_event(invites: list[Invite]) -> list[Invite]:
@@ -140,9 +154,10 @@ def _apply_instance(inv: Invite, cal) -> str | None:
 
 
 def is_current(event: dict, inv: Invite) -> bool:
-    """True si el evento ya refleja esta versión de la invitación con el formato actual."""
+    """True si el evento ya refleja esta versión de la invitación con el formato y preferencias actuales."""
     props = event.get("extendedProperties", {}).get("private", {})
-    return props.get("m2c_fmt") == FORMAT_VERSION and stored_version(event) >= inv.version
+    wanted = inv.body.get("extendedProperties", {}).get("private", {}).get("m2c_fmt", FORMAT_VERSION)
+    return props.get("m2c_fmt") == wanted and stored_version(event) >= inv.version
 
 
 def stored_version(event: dict) -> tuple[int, str]:

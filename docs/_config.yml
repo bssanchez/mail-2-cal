@@ -1,0 +1,3 @@
+# GitHub Pages solo publica las dos páginas que pide Google; la documentación se lee en el repo.
+exclude:
+  - arquitectura.md

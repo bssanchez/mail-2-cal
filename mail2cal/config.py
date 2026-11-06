@@ -28,6 +28,7 @@ class Config:
     google_calendar_id: str = "primary"
     default_timezone: str = "UTC"
     event_color_id: str = ""  # colorId de Google Calendar ("1".."11"); vacío = color del calendario
+    reminder_minutes: tuple[int, ...] = (30, 1)  # avisos emergentes; () = sin avisos
     backfill_days: int = 30
     state_backend: str = "file"  # "file" en local, "ssm" en Lambda
     state_path: str = "state.json"
@@ -58,6 +59,8 @@ class Config:
         if color and color not in {str(i) for i in range(1, 12)}:
             raise ConfigError(f"EVENT_COLOR_ID debe ser un número del 1 al 11, no {color!r}")
 
+        reminders = _reminders(env.get("REMINDER_MINUTES"))
+
         folders = tuple(f.strip() for f in (env.get("IMAP_FOLDERS") or "INBOX").split(",") if f.strip())
 
         return cls(
@@ -72,11 +75,24 @@ class Config:
             google_calendar_id=env.get("GOOGLE_CALENDAR_ID") or "primary",
             default_timezone=tz,
             event_color_id=color,
+            reminder_minutes=reminders,
             backfill_days=_int(env, "BACKFILL_DAYS", 30),
             state_backend=backend,
             state_path=env.get("STATE_PATH") or "state.json",
             state_ssm_param=env.get("STATE_SSM_PARAM") or "/mail2cal/state",
         )
+
+
+def _reminders(raw: str | None) -> tuple[int, ...]:
+    if raw is None:
+        return (30, 1)
+    try:
+        values = tuple(sorted({int(x) for x in raw.split(",") if x.strip()}, reverse=True))
+    except ValueError as exc:
+        raise ConfigError(f"REMINDER_MINUTES debe ser una lista de minutos separados por comas: {raw!r}") from exc
+    if len(values) > 5 or any(not 0 <= v <= 40320 for v in values):
+        raise ConfigError("REMINDER_MINUTES admite hasta 5 valores entre 0 y 40320 minutos")
+    return values
 
 
 def _int(env: dict[str, str], key: str, default: int) -> int:
