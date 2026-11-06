@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 # Campos que se copian a una instancia concreta de una serie (RECURRENCE-ID).
 INSTANCE_FIELDS = ("summary", "description", "location", "start", "end", "status", "transparency",
-                   "attendees", "extendedProperties")
+                   "attendees", "extendedProperties", "colorId")
 
 
 def run(cfg: Config, *, dry_run: bool = False, mailbox=None, calendar=None, store=None) -> dict:
@@ -37,9 +37,15 @@ def run(cfg: Config, *, dry_run: bool = False, mailbox=None, calendar=None, stor
             for uid, raw in batch.messages:
                 for text in extract_calendars(raw):
                     try:
-                        invites.extend(parse_calendar(text, cfg.default_timezone))
+                        parsed = parse_calendar(text, cfg.default_timezone)
                     except Exception as exc:
                         log.warning("%s UID %s: calendario ilegible (%s)", folder, uid, exc)
+                        continue
+                    if cfg.event_color_id:
+                        for inv in parsed:
+                            if inv.action == "upsert":
+                                inv.body["colorId"] = cfg.event_color_id
+                    invites.extend(parsed)
 
     pending = latest_per_event(invites)
     stats["invitaciones"] = len(pending)

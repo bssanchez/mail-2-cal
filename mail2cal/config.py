@@ -27,6 +27,7 @@ class Config:
     google_refresh_token: str = ""
     google_calendar_id: str = "primary"
     default_timezone: str = "UTC"
+    event_color_id: str = ""  # colorId de Google Calendar ("1".."11"); vacío = color del calendario
     backfill_days: int = 30
     state_backend: str = "file"  # "file" en local, "ssm" en Lambda
     state_path: str = "state.json"
@@ -53,6 +54,10 @@ class Config:
         if backend not in ("file", "ssm"):
             raise ConfigError(f"STATE_BACKEND debe ser 'file' o 'ssm', no {backend!r}")
 
+        color = (env.get("EVENT_COLOR_ID") or "").strip()
+        if color and color not in {str(i) for i in range(1, 12)}:
+            raise ConfigError(f"EVENT_COLOR_ID debe ser un número del 1 al 11, no {color!r}")
+
         folders = tuple(f.strip() for f in (env.get("IMAP_FOLDERS") or "INBOX").split(",") if f.strip())
 
         return cls(
@@ -66,6 +71,7 @@ class Config:
             google_refresh_token=env.get("GOOGLE_REFRESH_TOKEN", ""),
             google_calendar_id=env.get("GOOGLE_CALENDAR_ID") or "primary",
             default_timezone=tz,
+            event_color_id=color,
             backfill_days=_int(env, "BACKFILL_DAYS", 30),
             state_backend=backend,
             state_path=env.get("STATE_PATH") or "state.json",

@@ -176,3 +176,18 @@ def test_permanent_error_skips_invite_and_advances():
     cal.fail_with = GoogleApiError(400, "invalid")
     stats = sync(FakeMailbox(email_with(OUTLOOK_RECURRING)), cal, store)
     assert stats["error"] == 1 and store.state["folders"]["INBOX"]["last_uid"] == 1
+
+
+def test_event_color_applies_to_created_events():
+    from dataclasses import replace
+    cal = FakeCalendar()
+    run(replace(CFG, event_color_id="7"), mailbox=FakeMailbox(email_with(OUTLOOK_RECURRING)), calendar=cal,
+        store=MemoryStore())
+    [event] = cal.active()
+    assert event["colorId"] == "7"
+
+
+def test_invalid_color_is_rejected():
+    from mail2cal.config import ConfigError
+    with pytest.raises(ConfigError):
+        Config.from_env({"IMAP_USER": "a", "IMAP_PASSWORD": "b", "EVENT_COLOR_ID": "12"}, require_google=False)

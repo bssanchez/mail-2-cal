@@ -90,7 +90,7 @@ echo "dist/mail2cal.zip: $(du -h dist/mail2cal.zip | cut -f1)"
 python3 - "$TMP/env.json" <<'PY'
 import json, os, sys
 keys = ["IMAP_HOST", "IMAP_PORT", "IMAP_USER", "IMAP_FOLDERS", "GOOGLE_CLIENT_ID", "GOOGLE_CALENDAR_ID",
-        "DEFAULT_TIMEZONE", "BACKFILL_DAYS"]
+        "DEFAULT_TIMEZONE", "BACKFILL_DAYS", "EVENT_COLOR_ID"]
 env = {k: os.environ[k] for k in keys if os.environ.get(k)}
 prefix = "/" + os.environ.get("FUNCTION_NAME", "mail2cal")
 env.update(STATE_BACKEND="ssm", STATE_SSM_PARAM=f"{prefix}/state", SECRETS_SSM_PARAM=f"{prefix}/secrets")

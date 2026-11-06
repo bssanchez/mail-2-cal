@@ -10,6 +10,7 @@ minutos, así que no depende de que tu máquina esté encendida.
   En las series recurrentes también aplica los cambios y cancelaciones de una sola sesión.
 - Funciona con invitaciones de Outlook/Teams (traduce sus zonas horarias de Windows),
   Google Calendar, Zoom, etc., y pone el enlace de la reunión al principio de la descripción.
+- Puede ponerles un color propio a los eventos importados (`EVENT_COLOR_ID` en `.env`).
 - No envía nada a nadie: no responde invitaciones ni notifica a los asistentes.
 
 ## 1. Preparar Google (una sola vez, unos 10 min)
