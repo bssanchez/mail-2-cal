@@ -7,7 +7,7 @@ from collections import Counter
 
 from .config import Config
 from .gcal import GoogleApiError, GoogleCalendar
-from .ics_convert import Invite, parse_calendar
+from .ics_convert import FORMAT_VERSION, Invite, parse_calendar
 from .imap_source import Mailbox, extract_calendars
 from .state import FileState, SsmState
 
@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 # Campos que se copian a una instancia concreta de una serie (RECURRENCE-ID).
 INSTANCE_FIELDS = ("summary", "description", "location", "start", "end", "status", "transparency",
-                   "attendees", "extendedProperties", "colorId")
+                   "extendedProperties", "colorId")
 
 
 def run(cfg: Config, *, dry_run: bool = False, mailbox=None, calendar=None, store=None) -> dict:
@@ -114,9 +114,9 @@ def _apply_event(inv: Invite, cal, uid: str) -> str:
     if existing is None:
         cal.import_event(body)
         return "creado"
-    if existing.get("status") != "cancelled" and stored_version(existing) >= inv.version:
+    if existing.get("status") != "cancelled" and is_current(existing, inv):
         return "sin_cambios"
-    body.pop("organizer", None)  # solo se puede fijar al importar
+    # PUT reemplaza el evento completo: también quita invitados que hubieran quedado de antes.
     cal.update_event(existing["id"], body)
     return "actualizado"
 
@@ -133,10 +133,16 @@ def _apply_instance(inv: Invite, cal) -> str | None:
             return "sin_cambios"
         cal.patch_event(instance["id"], {"status": "cancelled"})
         return "eliminado"
-    if instance.get("status") != "cancelled" and stored_version(instance) >= inv.version:
+    if instance.get("status") != "cancelled" and is_current(instance, inv):
         return "sin_cambios"
     cal.patch_event(instance["id"], {k: inv.body[k] for k in INSTANCE_FIELDS if k in inv.body})
     return "actualizado"
+
+
+def is_current(event: dict, inv: Invite) -> bool:
+    """True si el evento ya refleja esta versión de la invitación con el formato actual."""
+    props = event.get("extendedProperties", {}).get("private", {})
+    return props.get("m2c_fmt") == FORMAT_VERSION and stored_version(event) >= inv.version
 
 
 def stored_version(event: dict) -> tuple[int, str]:

@@ -20,20 +20,30 @@ def test_outlook_recurring_request():
         "RRULE:FREQ=WEEKLY;UNTIL=20261222T140000Z;INTERVAL=1;BYDAY=TU;WKST=SU",
         "EXDATE:20261117T140000Z",
     ]
-    assert body["description"].startswith("Enlace de la reunión: https://teams.microsoft.com/l/meetup-join/abc")
-    assert body["organizer"] == {"email": "ana@cliente.com", "displayName": "Ana Jefa"}
-    by_email = {a["email"]: a for a in body["attendees"]}
-    assert by_email["yo@miempresa.com"]["responseStatus"] == "needsAction"
-    assert by_email["pedro@cliente.com"] == {"email": "pedro@cliente.com", "responseStatus": "accepted",
-                                             "displayName": "Pedro", "optional": True}
-    assert by_email["sala1@cliente.com"]["resource"] is True
+    assert body["description"].splitlines()[:4] == [
+        "Enlace de la reunión: https://teams.microsoft.com/l/meetup-join/abc",
+        "Organiza: Ana Jefa <ana@cliente.com>",
+        "Invitados: Yo <yo@miempresa.com>; Pedro <pedro@cliente.com> (opcional, aceptó); "
+        "Sala 1 <sala1@cliente.com> (sala)",
+        "",
+    ]
+    assert body["description"].endswith("Unirse: <https://teams.microsoft.com/l/meetup-join/abc>")
+    # Nunca se pasan a Google: el evento sería "tuyo" y Google podría escribirles.
+    assert "organizer" not in body and "attendees" not in body
     assert body["extendedProperties"]["private"]["m2c_seq"] == "0"
+    assert body["extendedProperties"]["private"]["m2c_fmt"] == "2"
 
 
 def test_google_invite_uses_meet_link_and_iana_zone():
     [inv] = parse_calendar(GOOGLE_INVITE, TZ)
     assert inv.body["start"] == {"dateTime": "2026-11-12T15:00:00-06:00", "timeZone": "America/Mexico_City"}
-    assert "https://meet.google.com/abc-defg-hij" in inv.body["description"]
+    assert inv.body["description"].splitlines() == [
+        "Enlace de la reunión: https://meet.google.com/abc-defg-hij",
+        "Organiza: luis@proveedor.mx",
+        "Invitados: yo@miempresa.com",
+        "",
+        "Demo del producto",
+    ]
     assert "location" not in inv.body
 
 

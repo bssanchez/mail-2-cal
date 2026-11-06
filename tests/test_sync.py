@@ -56,9 +56,7 @@ class FakeCalendar:
 
     def update_event(self, event_id, body):
         self._check("update")
-        assert "organizer" not in body  # en Google es de solo lectura fuera del import
-        organizer = self.events[event_id].get("organizer")
-        self.events[event_id] = {**copy.deepcopy(body), "id": event_id, "organizer": organizer}
+        self.events[event_id] = {**copy.deepcopy(body), "id": event_id}
         return self.events[event_id]
 
     def patch_event(self, event_id, body):
@@ -128,7 +126,6 @@ def test_update_with_higher_sequence():
     assert sync(box, cal, store) == {"mensajes_revisados": 1, "invitaciones": 1, "actualizado": 1}
     [event] = cal.active()
     assert event["summary"] == "Seguimiento semanal (nuevo horario)"
-    assert event["organizer"]["email"] == "ana@cliente.com"  # se conserva del import
 
 
 def test_cancel_removes_event():
@@ -191,3 +188,22 @@ def test_invalid_color_is_rejected():
     from mail2cal.config import ConfigError
     with pytest.raises(ConfigError):
         Config.from_env({"IMAP_USER": "a", "IMAP_PASSWORD": "b", "EVENT_COLOR_ID": "12"}, require_google=False)
+
+
+def test_events_with_old_format_are_rewritten_without_attendees():
+    cal = FakeCalendar()
+    box = FakeMailbox(email_with(OUTLOOK_RECURRING))
+    sync(box, cal, MemoryStore())
+    [event] = cal.active()
+    # Simula un evento importado por la versión anterior (con invitados y sin m2c_fmt).
+    event["attendees"] = [{"email": "pedro@cliente.com"}]
+    del event["extendedProperties"]["private"]["m2c_fmt"]
+    assert sync(box, cal, MemoryStore())["actualizado"] == 1
+    [event] = cal.active()
+    assert "attendees" not in event and event["extendedProperties"]["private"]["m2c_fmt"] == "2"
+
+
+def test_no_participants_are_sent_to_google():
+    cal = FakeCalendar()
+    sync(FakeMailbox(email_with(OUTLOOK_RECURRING), email_with(GOOGLE_INVITE)), cal, MemoryStore())
+    assert all("attendees" not in e and "organizer" not in e for e in cal.events.values())

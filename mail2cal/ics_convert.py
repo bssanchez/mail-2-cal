@@ -25,7 +25,10 @@ MEETING_URL_RE = re.compile(
     r"|[\w.-]*webex\.com|meet\.jit\.si|[\w.-]*whereby\.com)/[^\s<>\"')\]]+",
     re.I,
 )
-PARTSTAT = {"ACCEPTED": "accepted", "DECLINED": "declined", "TENTATIVE": "tentative"}
+PARTSTAT = {"ACCEPTED": "aceptó", "DECLINED": "rechazó", "TENTATIVE": "quizás"}
+MAX_LISTED_ATTENDEES = 40
+# Sube este número cuando cambie cómo se arma el evento: los ya importados se reescriben.
+FORMAT_VERSION = "2"
 
 
 @dataclass
@@ -125,10 +128,14 @@ def _event_body(ev: icalendar.Event, invite: Invite, status: str, default_tz: st
         end = start
 
     location = str(ev.get("LOCATION") or "").strip()
-    description = str(ev.get("DESCRIPTION") or "").strip()
-    meeting_url = _meeting_url(ev, description, location)
-    if meeting_url:
-        description = f"Enlace de la reunión: {meeting_url}\n\n{description}".strip()
+    original = str(ev.get("DESCRIPTION") or "").strip()
+    meeting_url = _meeting_url(ev, original, location)
+    # Organizador e invitados van como texto: si se pasaran a Google, el evento quedaría con
+    # tu Gmail como organizador y Google podría escribirles al editarlo o borrarlo.
+    header = [f"Enlace de la reunión: {meeting_url}"] if meeting_url else []
+    header += _people_lines(ev)
+    description = "\n".join(header) + ("\n\n" + original if original else "")
+    description = description.strip()
     if len(description) > MAX_DESCRIPTION:
         description = description[: MAX_DESCRIPTION - 20].rstrip() + "\n\n[…recortado]"
 
@@ -141,7 +148,8 @@ def _event_body(ev: icalendar.Event, invite: Invite, status: str, default_tz: st
         "transparency": "transparent" if str(ev.get("TRANSP") or "").upper() == "TRANSPARENT" else "opaque",
         "reminders": {"useDefault": True},
         "extendedProperties": {
-            "private": {"mail2cal": "1", "m2c_seq": str(invite.sequence), "m2c_stamp": invite.stamp}
+            "private": {"mail2cal": "1", "m2c_seq": str(invite.sequence), "m2c_stamp": invite.stamp,
+                        "m2c_fmt": FORMAT_VERSION}
         },
     }
     if location:
@@ -151,16 +159,6 @@ def _event_body(ev: icalendar.Event, invite: Invite, status: str, default_tz: st
     if str(ev.get("CLASS") or "").upper() in ("PRIVATE", "CONFIDENTIAL"):
         body["visibility"] = "private"
 
-    organizer = ev.get("ORGANIZER")
-    if organizer is not None and "@" in _mailto(organizer):
-        body["organizer"] = {"email": _mailto(organizer)}
-        if organizer.params.get("CN"):
-            body["organizer"]["displayName"] = str(organizer.params["CN"])
-
-    attendees = [a for a in (_attendee(x) for x in _as_list(ev.get("ATTENDEE"))) if a]
-    if attendees:
-        body["attendees"] = attendees
-
     if invite.recurrence_id is None:
         recurrence = _recurrence(ev, default_tz)
         if recurrence:
@@ -168,21 +166,37 @@ def _event_body(ev: icalendar.Event, invite: Invite, status: str, default_tz: st
     return body
 
 
-def _attendee(prop) -> dict | None:
+def _people_lines(ev: icalendar.Event) -> list[str]:
+    lines = []
+    organizer = ev.get("ORGANIZER")
+    organizer_email = _mailto(organizer).lower() if organizer is not None else ""
+    if "@" in organizer_email:
+        lines.append(f"Organiza: {_person(organizer)}")
+    people = []
+    for prop in _as_list(ev.get("ATTENDEE")):
+        email = _mailto(prop)
+        if "@" not in email or email.lower() == organizer_email:
+            continue
+        notes = []
+        if str(prop.params.get("CUTYPE") or "").upper() in ("ROOM", "RESOURCE"):
+            notes.append("sala")
+        elif str(prop.params.get("ROLE") or "").upper() == "OPT-PARTICIPANT":
+            notes.append("opcional")
+        status = PARTSTAT.get(str(prop.params.get("PARTSTAT") or "").upper())
+        if status:
+            notes.append(status)
+        people.append(_person(prop) + (f" ({', '.join(notes)})" if notes else ""))
+    if people:
+        listed = people[:MAX_LISTED_ATTENDEES]
+        extra = len(people) - len(listed)
+        lines.append("Invitados: " + "; ".join(listed) + (f"; y {extra} más" if extra > 0 else ""))
+    return lines
+
+
+def _person(prop) -> str:
     email = _mailto(prop)
-    if "@" not in email:
-        return None
-    item = {
-        "email": email,
-        "responseStatus": PARTSTAT.get(str(prop.params.get("PARTSTAT") or "").upper(), "needsAction"),
-    }
-    if prop.params.get("CN"):
-        item["displayName"] = str(prop.params["CN"])
-    if str(prop.params.get("ROLE") or "").upper() == "OPT-PARTICIPANT":
-        item["optional"] = True
-    if str(prop.params.get("CUTYPE") or "").upper() in ("ROOM", "RESOURCE"):
-        item["resource"] = True
-    return item
+    name = str(prop.params.get("CN") or "").strip().strip('"')
+    return f"{name} <{email}>" if name and name.lower() != email.lower() else email
 
 
 def _recurrence(ev: icalendar.Event, default_tz: str) -> list[str]:
