@@ -1,0 +1,10 @@
+[project]
+name = "mail2cal"
+version = "0.1.0"
+description = "Copia las invitaciones que llegan por IMAP a Google Calendar"
+requires-python = ">=3.12"
+dependencies = ["icalendar>=7.3,<8"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

@@ -1,0 +1,9 @@
+.venv/
+.env
+state.json
+build/
+dist/
+__pycache__/
+.pytest_cache/
+client_secret*.json
+*.pem
